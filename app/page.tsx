@@ -6,7 +6,8 @@ import {
   mintAddrAtom,
   solbalanceAtom,
   splbalanceAtom,
-  walletAtom
+  walletAtom,
+  transactionResultAtom
 } from "./store/atom";
 import React, { useState, useEffect } from "react";
 import {
@@ -21,7 +22,8 @@ import * as spl from "@solana/spl-token";
 import { BN } from "bn.js"; // Import BN class as a value
 // import IDLJson from "@/idl/spl_transfer.json";
 import IDLJson from "@/idl/token_transfer.json";
-
+import TransactionResult from "./component/TransactionResult";
+import Loader from "./component/Loader";
 // const PROGRAM_ID = "E993A9BwXL5xpdJtjiiqusRvd2Ndzdh1NixeTPzY4PFi";
 const PROGRAM_ID = "2gtTL6umefWYBUqAppXFBrax7DP5Rwp25ihYEV4R8FA2";
 
@@ -30,10 +32,15 @@ export default function Home() {
   const [splbalance] = useAtom(splbalanceAtom);
   const [mintAddr, setMintAddr] = useAtom(mintAddrAtom);
   const [walletAddress] = useAtom(walletAtom);
+  const [, setTransactionResult] = useAtom(transactionResultAtom);
+  const [loading, setLoading] = useState(false);
+
   const [recipientAddress, setRecipientAddress] = useState(""); // State for recipient address input
+  const [amount, setAmount] = useState(0);
   const DEVNET_ENDPOINT = "https://api.devnet.solana.com";
 
   const handleTransfer = async () => {
+    setLoading(true);
     try {
       const payer = new PublicKey(String(walletAddress));
       const mint = new PublicKey(String(mintAddr));
@@ -82,7 +89,7 @@ export default function Home() {
       console.log("here-->1");
 
       const transferIx = await program.methods
-        .transferToken2022(new BN(10000000))
+        .transferToken2022(new BN(Number(amount)))
         .accounts({
           from: payer,
           fromAta: senderATA,
@@ -106,16 +113,18 @@ export default function Home() {
       const signature = await solana.signAndSendTransaction(transaction);
       await connection.confirmTransaction(signature.signature);
       console.log("Okay", signature);
-      // setTransactionResult({
-      // signature: signature,
-      // success: true
-      // });
+      setTransactionResult({
+        signature: signature.signature,
+        success: true
+      });
+      setLoading(false);
     } catch (error) {
+      setTransactionResult({
+        signature: "",
+        success: false
+      });
+      setLoading(false);
       console.error("fail:", error);
-      // setTransactionResult({
-      //     signature: '',
-      //     success: false
-      // });
     }
   };
   return (
@@ -153,16 +162,26 @@ export default function Home() {
             />
           </div>
           <div className="border rounded-md border-gray-300 p-2">
-            Token Amount: {1000}
+            <input
+              id="recipient"
+              type="text"
+              placeholder="Send Amount"
+              className="w-full p-2 rounded border-gray-300 "
+              value={amount}
+              onChange={e => setAmount(Number(e.target.value))}
+            />
           </div>
         </div>
         <div className="flex justify-center">
           <button
-            className="bg-green-500 rounded-xl p-1 px-4 text-xl"
+            className="bg-green-500 rounded-xl p-2 px-4 text-xl min-w-40 "
             onClick={handleTransfer}
           >
-            Transfer
+            {loading ? <Loader /> : "Transfer"}
           </button>
+        </div>
+        <div className="flex justify-center">
+          {!loading && <TransactionResult />}
         </div>
       </main>
     </div>
