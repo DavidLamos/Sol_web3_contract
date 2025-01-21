@@ -1,101 +1,170 @@
-import Image from "next/image";
+"use client";
+
+import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import { useAtom } from "jotai";
+import {
+  mintAddrAtom,
+  solbalanceAtom,
+  splbalanceAtom,
+  walletAtom
+} from "./store/atom";
+import React, { useState, useEffect } from "react";
+import {
+  Connection,
+  PublicKey,
+  Transaction,
+  SystemProgram,
+  clusterApiUrl
+} from "@solana/web3.js"; // Import the necessary Solana SDK components
+import { Program, AnchorProvider, Idl, web3 } from "@project-serum/anchor";
+import * as spl from "@solana/spl-token";
+import { BN } from "bn.js"; // Import BN class as a value
+// import IDLJson from "@/idl/spl_transfer.json";
+import IDLJson from "@/idl/token_transfer.json";
+
+// const PROGRAM_ID = "E993A9BwXL5xpdJtjiiqusRvd2Ndzdh1NixeTPzY4PFi";
+const PROGRAM_ID = "2gtTL6umefWYBUqAppXFBrax7DP5Rwp25ihYEV4R8FA2";
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const [solBalance] = useAtom(solbalanceAtom);
+  const [splbalance] = useAtom(splbalanceAtom);
+  const [mintAddr, setMintAddr] = useAtom(mintAddrAtom);
+  const [walletAddress] = useAtom(walletAtom);
+  const [recipientAddress, setRecipientAddress] = useState(""); // State for recipient address input
+  const DEVNET_ENDPOINT = "https://api.devnet.solana.com";
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
+  const handleTransfer = async () => {
+    try {
+      const payer = new PublicKey(String(walletAddress));
+      const mint = new PublicKey(String(mintAddr));
+      const recipient = new PublicKey(recipientAddress);
+
+      const connection = new Connection(DEVNET_ENDPOINT);
+      const provider = new AnchorProvider(
+        connection,
+        solana,
+        AnchorProvider.defaultOptions()
+      );
+
+      const senderATA = spl.getAssociatedTokenAddressSync(
+        mint,
+        payer,
+        true,
+        spl.TOKEN_2022_PROGRAM_ID
+      );
+
+      const recipientATA = spl.getAssociatedTokenAddressSync(
+        mint,
+        recipient,
+        true,
+        spl.TOKEN_2022_PROGRAM_ID
+      );
+
+      console.log("here :", senderATA.toBase58(), recipientATA.toBase58());
+
+      const toAtaInfo = await connection.getAccountInfo(recipientATA);
+      let transaction = new web3.Transaction();
+      if (!toAtaInfo) {
+        const createAtaIx = spl.createAssociatedTokenAccountInstruction(
+          payer, // payer
+          recipientATA, // ata
+          recipient, // owner
+          mint, // mint
+          spl.TOKEN_2022_PROGRAM_ID // programId
+        );
+        transaction.add(createAtaIx);
+      }
+      const program = new Program(
+        (IDLJson as unknown) as Idl,
+        PROGRAM_ID,
+        provider
+      );
+      console.log("here-->1");
+
+      const transferIx = await program.methods
+        .transferToken2022(new BN(10000000))
+        .accounts({
+          from: payer,
+          fromAta: senderATA,
+          toAta: recipientATA,
+          mint: mint,
+          tokenProgram: spl.TOKEN_2022_PROGRAM_ID
+        })
+        .transaction();
+      console.log("here-->");
+
+      transaction.add(transferIx);
+
+      const latestBlockhash = await connection.getLatestBlockhash();
+      transaction.recentBlockhash = latestBlockhash.blockhash;
+      transaction.feePayer = payer;
+      const simRes = await connection.simulateTransaction(transaction);
+      if (simRes.value.err) {
+        console.log(simRes);
+        return;
+      }
+      const signature = await solana.signAndSendTransaction(transaction);
+      await connection.confirmTransaction(signature.signature);
+      console.log("Okay", signature);
+      // setTransactionResult({
+      // signature: signature,
+      // success: true
+      // });
+    } catch (error) {
+      console.error("fail:", error);
+      // setTransactionResult({
+      //     signature: '',
+      //     success: false
+      // });
+    }
+  };
+  return (
+    <div className="flex flex-col justify-center items-center p-2 h-screen gap-2">
+      <header className="absolute top-0 right-0 p-2">
+        <div className="border hover:border-slate-900 rounded">
+          <WalletMultiButton style={{}} />
+        </div>
+      </header>
+      <main className="border border-1 rounded-md p-2 w-1/2 max-w-[500px]">
+        <div className="text-3xl text-blue-700 text-center mb-2">
+          SPL Token Transfer
+        </div>
+
+        <div className="flex flex-col gap-2 p-2">
+          <div className="flex flex-row border border-1 p-2 justify-between">
+            <div>
+              SOL Balance: {solBalance}
+            </div>
+            <div>
+              SPL Token Balance: {splbalance}
+            </div>
+          </div>
+          <div className="border rounded-md border-gray-300 p-2">
+            Token Address: {mintAddr}
+          </div>
+          <div className="border rounded-md border-gray-300 p-2">
+            <input
+              id="recipient"
+              type="text"
+              placeholder="Recipient address"
+              className="w-full p-2 rounded border-gray-300 "
+              value={recipientAddress}
+              onChange={e => setRecipientAddress(e.target.value)}
             />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+          </div>
+          <div className="border rounded-md border-gray-300 p-2">
+            Token Amount: {1000}
+          </div>
+        </div>
+        <div className="flex justify-center">
+          <button
+            className="bg-green-500 rounded-xl p-1 px-4 text-xl"
+            onClick={handleTransfer}
           >
-            Read our docs
-          </a>
+            Transfer
+          </button>
         </div>
       </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
     </div>
   );
 }
